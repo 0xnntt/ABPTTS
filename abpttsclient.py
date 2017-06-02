@@ -53,6 +53,13 @@ import libabptts
 from Crypto.Cipher import AES
 from datetime import datetime, date, tzinfo, timedelta
 
+
+# /*  Custom Code -> NTLM-Auth */
+import requests
+from requests_ntlm import HttpNtlmAuth
+# /*  Custom Code <- NTLM-Auth */
+
+
 outputHandler = libabptts.OutputHandler()
 conf = libabptts.ABPTTSConfiguration(outputHandler)
 
@@ -67,6 +74,9 @@ httpRequestRetryLimit = 12
 httpRequestRetryDelay = 5.0
 
 unsafeTLSMode = False
+NTLMAuth = False
+NTLMUser = "Domain\\UserName"
+NTLMPass = "P@ssw0rd"
 
 runServer = 1
 
@@ -185,6 +195,14 @@ def child(clientsock, clientAddr, listeningAddress, forwardingURL, destAddress, 
 		connectionID = ""
 		cookieVal = ""
 		body = {}
+
+		# /*  Custom Code  -> NTLM-Auth */
+		if(NTLMAuth == True):
+			session = requests.Session()
+			session.auth = HttpNtlmAuth(NTLMUser,NTLMPass, session)
+
+		# /*  Custom Code  <- NTLM-Auth */
+
 		http = httplib2.Http(timeout=httpConnectionTimeout, disable_ssl_certificate_validation=unsafeTLSMode)
 		response = ""
 		content = ""
@@ -214,9 +232,19 @@ def child(clientsock, clientAddr, listeningAddress, forwardingURL, destAddress, 
 			if conf.echoHTTPBody:
 				outputTunnelIOMessage('C2S', formattedClientAddress, listeningAddress, formattedServerAddress, '', 'HTTP Request Body', '%s%s' % (os.linesep, encodedBody))
 			
-			http = httplib2.Http(timeout=httpConnectionTimeout, disable_ssl_certificate_validation=unsafeTLSMode)
-			response, content = http.request(forwardingURL, 'POST', headers=headers, body=encodedBody)
-			content = getServerResponseFromResponseBody(content, responseStringWrapperText, formattedServerAddress, formattedClientAddress, listeningAddress, connectionID)
+			# /* Custom Code -> NTLM-Auth*/
+			if (NTLMAuth == True):
+				r = session.post(forwardingURL, data = encodedBody , headers = headers , verify = unsafeTLSMode )
+				response = r.headers
+				content = getServerResponseFromResponseBody(r.text,responseStringWrapperText, formattedServerAddress, formattedClientAddress, listeningAddress, connectionID)
+			else:
+				http = httplib2.Http(timeout=httpConnectionTimeout, disable_ssl_certificate_validation=unsafeTLSMode)
+				response, content = http.request(forwardingURL, 'POST', headers=headers, body=encodedBody)
+				content = getServerResponseFromResponseBody(content, responseStringWrapperText, formattedServerAddress, formattedClientAddress, listeningAddress, connectionID)
+
+			# /* Custom Code <- NTLM-Auth*/
+
+
 			cookieVal = getCookieFromServerResponse(connectionID, cookieVal, response)
 			headers['Cookie'] = cookieVal
 			if conf.responseStringConnectionCreated in content:
@@ -311,7 +339,15 @@ def child(clientsock, clientAddr, listeningAddress, forwardingURL, destAddress, 
 					httpRetryCount = 0
 					while madeRequest == False:
 						try:
-							response, content = http.request(forwardingURL, 'POST', headers=headers, body=encodedBody)
+							#/* Custom Code -> NTLM-Auth */
+							if (NTLMAuth == True):
+								r = session.post(forwardingURL, data = encodedBody , headers = headers ,verify = unsafeTLSMode )
+								response = r.headers
+								content = getServerResponseFromResponseBody(r.text,responseStringWrapperText, formattedServerAddress, formattedClientAddress, listeningAddress, connectionID)
+							else:
+								response, content = http.request(forwardingURL, 'POST', headers=headers, body=encodedBody)
+							#/* Custom Code <- NTLM-Auth */
+
 							madeRequest = True
 						except Exception as e:
 							httpRetryCount += 1
@@ -505,9 +541,17 @@ def child(clientsock, clientAddr, listeningAddress, forwardingURL, destAddress, 
 					body = {conf.paramNamePlaintextBlock: plaintextMessage }
 				else:
 					body = {conf.paramNameAccessKey: conf.headerValueKey, conf.paramNamePlaintextBlock: plaintextMessage }
-			
-			http = httplib2.Http(timeout=httpConnectionTimeout, disable_ssl_certificate_validation=unsafeTLSMode)
-			response, content = http.request(forwardingURL, 'POST', headers=headers, body=urllib.urlencode(body))
+			#/* Custom Code -> NTLM-Auth */
+			if(NTLMAuth == True):
+				r = session.post(forwardingURL, data = urllib.urlencode(body)  , headers = headers ,verify = unsafeTLSMode )
+				response = r.headers
+			else:
+				http = httplib2.Http(timeout=httpConnectionTimeout, disable_ssl_certificate_validation=unsafeTLSMode)
+				response, content = http.request(forwardingURL, 'POST', headers=headers, body=urllib.urlencode(body))
+
+			#/* Custom Code <- NTLM-Auth *
+
+			content = getServerResponseFromResponseBody(r.text,responseStringWrapperText, formattedServerAddress, formattedClientAddress, listeningAddress, connectionID)
 			content = getServerResponseFromResponseBody(content, responseStringWrapperText, formattedServerAddress, formattedClientAddress, listeningAddress, connectionID)
 			cookieVal = getCookieFromServerResponse(connectionID, cookieVal, response)
 			headers['Cookie'] = cookieVal
@@ -636,7 +680,13 @@ if __name__=='__main__':
 		if a == "--unsafetls":
 			unsafeTLSMode = True
 			outputHandler.outputMessage('WARNING: The current configuration ignores TLS/SSL certificate validation errors for connection to the server component. This increases the risk of the communication channel being intercepted or tampered with.')
-			
+		
+		#/* Custom Code -> NTLM-Auth */
+		if a == "--ntlm-auth":
+			NTLMAuth = True
+			outputHandler.outputMessage('Please specify your credential at the beginning of this file : abpttsClient.py ')
+		#/* Custom Code <- NTLM-Auth */
+
 		#if a == "--quiet":
 		#	conf.writeToStandardOut = False
 			
