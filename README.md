@@ -1,4 +1,4 @@
-# A Black Path Toward The Sun
+# A Black Path Toward The Sun ( NTLM Auth Support ) 
 (TCP tunneling over HTTP for web application servers)
 
 https://www.blackhat.com/us-16/arsenal.html#a-black-path-toward-the-sun
